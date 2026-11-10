@@ -132,3 +132,13 @@ def test_identity_tracks_inode_and_direction_and_rejects_foreign_socket(tmp_path
     owner.tables.clear()
     (net/'tcp').write_text('header\n')
     assert owner.resolve_identity(flow) is None
+
+
+def test_first_confirmation_resets_timeout_of_residual_kernel_element():
+    fw = g.Firewall()
+    fw.run = Mock()
+    flow = g.Flow(4, 'udp', '8.8.8.8', 42000, '1.1.1.1', 18000)
+    fw.block(flow)
+    script = fw.run.call_args.args[0]
+    assert 'delete element' in script and 'add element' in script
+    assert 'timeout 120s' in script

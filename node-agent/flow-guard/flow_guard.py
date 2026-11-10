@@ -218,7 +218,8 @@ class Firewall:
                 'input_bytes': size['input'], 'output_bytes': size['output']}
 
     def block(self, flow):
-        self.run(f'add element inet {TABLE} {flow.setname} {{ {flow.element(self.ttl)} }}\n')
+        # A previous guard process may have left this exact element behind.
+        self.renew(flow)
 
 
     def renew(self, flow):
@@ -230,7 +231,8 @@ class Firewall:
         except subprocess.CalledProcessError as exc:
             if 'No such file or directory' not in (exc.stderr or ''):
                 raise
-            self.block(flow)  # The old element already expired; ownership was rechecked.
+            # Also covers the first insertion and an already expired element.
+            self.run(f'add element inet {TABLE} {flow.setname} {{ {flow.element(self.ttl)} }}\n')
 
     def unblock(self, flow):
         try:
