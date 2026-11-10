@@ -34,8 +34,11 @@ class Flow:
     def token(self):
         return hashlib.sha256(repr(self).encode()).hexdigest()[:16]
 
+    def key(self):
+        return f'{self.local_ip} . {self.local_port} . {self.peer_ip} . {self.peer_port}'
+
     def element(self, ttl):
-        return f'{self.local_ip} . {self.local_port} . {self.peer_ip} . {self.peer_port} timeout {ttl}s'
+        return f'{self.key()} timeout {ttl}s'
 
 
 def candidate(event, now=None):
@@ -82,6 +85,7 @@ class SocketOwner:
         self.root = Path(root)
         self.cache_at = 0
         self.inodes = set()
+        self.tables = {}
 
     def refresh(self):
         if time.monotonic() - self.cache_at < .25:
@@ -100,14 +104,19 @@ class SocketOwner:
                         link = os.readlink(fd)
                         if link.startswith('socket:['):
                             inodes.add(link[8:-1])
-                    except OSError:
+                    except FileNotFoundError:
                         pass
-            except OSError:
+            except FileNotFoundError:
                 continue
         self.inodes = inodes
+        self.tables.clear()
         self.cache_at = time.monotonic()
 
     def resolve(self, flow):
+        identity = self.resolve_identity(flow)
+        return identity[0] if identity else None
+
+    def resolve_identity(self, flow):
         self.refresh()
         if not self.inodes:
             return None
@@ -115,8 +124,11 @@ class SocketOwner:
         for table_family in ([4, 6] if flow.family == 4 else [6]):
             suffix = '' if table_family == 4 else '6'
             try:
-                lines.extend((table_family, line) for line in (self.root/'net'/f'{flow.proto}{suffix}').read_text().splitlines()[1:])
-            except OSError:
+                key = (table_family, flow.proto)
+                if key not in self.tables:
+                    self.tables[key] = (self.root/'net'/f'{flow.proto}{suffix}').read_text().splitlines()[1:]
+                lines.extend((table_family, line) for line in self.tables[key])
+            except FileNotFoundError:
                 pass
         for table_family, line in lines:
             p = line.split()
@@ -143,7 +155,7 @@ class SocketOwner:
                     continue
                 if f.peer_port not in range(6881, 7000) and f.peer_port < 10000:
                     continue
-                return f
+                return f, p[9]
         return None
 
 
@@ -209,6 +221,92 @@ class Firewall:
         self.run(f'add element inet {TABLE} {flow.setname} {{ {flow.element(self.ttl)} }}\n')
 
 
+    def renew(self, flow):
+        # nft -f submits both operations in one transaction: no unblocked window.
+        script = (f'delete element inet {TABLE} {flow.setname} {{ {flow.key()} }}\n'
+                  f'add element inet {TABLE} {flow.setname} {{ {flow.element(self.ttl)} }}\n')
+        try:
+            self.run(script)
+        except subprocess.CalledProcessError as exc:
+            if 'No such file or directory' not in (exc.stderr or ''):
+                raise
+            self.block(flow)  # The old element already expired; ownership was rechecked.
+
+    def unblock(self, flow):
+        try:
+            self.run(f'delete element inet {TABLE} {flow.setname} {{ {flow.key()} }}\n')
+        except subprocess.CalledProcessError as exc:
+            if 'No such file or directory' not in (exc.stderr or ''):
+                raise
+
+
+@dataclasses.dataclass
+class Lease:
+    inode: str
+    refreshed_at: float
+
+
+class BlockLeases:
+    """A kernel timeout is a crash safety net, never a live-socket time limit."""
+    def __init__(self, firewall, owner, counts, enforce=True, clock=time.monotonic):
+        if not 6 <= firewall.ttl <= 3600:
+            raise ValueError('PILOT_TTL must be between 6 and 3600 seconds')
+        self.firewall, self.owner, self.counts = firewall, owner, counts
+        self.enforce, self.clock = enforce, clock
+        self.entries = {}
+        self.renew_interval = min(40, firewall.ttl / 3)
+
+    def confirm(self, flow, inode):
+        now = self.clock()
+        lease = self.entries.get(flow)
+        if lease and lease.inode == inode:
+            # Bound nft subprocesses under repeated DPI updates.
+            if now - lease.refreshed_at < 1:
+                self.counts['duplicates'] += 1
+                return False
+            self._renew(flow, lease, now)
+            self.counts['detection_renewals'] += 1
+            return False
+        if lease:
+            self._remove(flow, 'socket_replaced')
+        if len(self.entries) >= 2048:
+            self.counts['capacity_skips'] += 1
+            return False
+        if self.enforce:
+            self.firewall.block(flow)
+        self.entries[flow] = Lease(inode, now)
+        self.counts['blocks' if self.enforce else 'would_block'] += 1
+        return True
+
+    def _renew(self, flow, lease, now):
+        if self.enforce:
+            self.firewall.renew(flow)
+        lease.refreshed_at = now
+        self.counts['renewals'] += 1
+
+    def _remove(self, flow, reason):
+        if self.enforce:
+            self.firewall.unblock(flow)
+        del self.entries[flow]
+        self.counts[reason] += 1
+
+    def maintain(self):
+        self.owner.cache_at = 0
+        self.owner.refresh()
+        now = self.clock()
+        for flow, lease in list(self.entries.items()):
+            try:
+                identity = self.owner.resolve_identity(flow)
+                if identity != (flow, lease.inode):
+                    # Same IP/port with a different inode is a NEW socket.
+                    self._remove(flow, 'socket_closed')
+                elif now - lease.refreshed_at >= self.renew_interval:
+                    self._renew(flow, lease, now)
+            except (OSError, subprocess.SubprocessError):
+                # Do not renew on uncertain ownership; the kernel TTL remains finite.
+                self.counts['lease_errors'] += 1
+
+
 async def main():
     mode = os.environ.get('PILOT_MODE', 'dry-run')
     if mode not in {'dry-run', 'enforce'}:
@@ -216,10 +314,11 @@ async def main():
     state = Path('/state');state.mkdir(exist_ok=True)
     log = state/'events.jsonl'
     counts = collections.Counter()
-    blocked = {}
     firewall = Firewall(int(os.environ.get('PILOT_TTL', '120')))
     firewall.ensure()
     owner = SocketOwner()
+    leases = BlockLeases(firewall, owner, counts, mode == 'enforce')
+    blocked = leases.entries
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -241,17 +340,16 @@ async def main():
     async def health():
         while not stop.is_set():
             try:
+                leases.maintain()
+            except OSError:
+                counts['ownership_scan_errors'] += 1
+            try:
                 status['firewall'] = firewall.snapshot()
             except (OSError, ValueError, KeyError, subprocess.SubprocessError):
                 # A failed kernel read is unknown, never a fabricated zero.
                 status['firewall'] = None
                 counts['firewall_sample_errors'] += 1
-            owner.refresh()
             status['xray_owned_socket_count'] = len(owner.inodes)
-            now = time.monotonic()
-            for f, expiry in list(blocked.items()):
-                if expiry < now:
-                    blocked.pop(f, None)
             publish()
             try:
                 await asyncio.wait_for(stop.wait(), 2)
@@ -283,27 +381,19 @@ async def main():
                     if flow is None:
                         continue
                     counts['strong_torrent_events'] += 1
-                    owned = owner.resolve(flow)
-                    if owned is None:
+                    identity = owner.resolve_identity(flow)
+                    if identity is None:
                         # Allow a just-created Xray socket to appear in procfs.
                         await asyncio.sleep(.1)
                         owner.cache_at = 0
-                        owned = owner.resolve(flow)
-                    if owned is None:
+                        identity = owner.resolve_identity(flow)
+                    if identity is None:
                         counts['not_owned_or_protected'] += 1
                         continue
-                    if blocked.get(owned, 0) > time.monotonic():
-                        counts['duplicates'] += 1
-                        continue
-                    if len(blocked) >= 2048:
-                        counts['capacity_skips'] += 1
-                        continue
+                    owned, inode = identity
                     try:
-                        if mode == 'enforce':
-                            firewall.block(owned)
-                        counts['blocks' if mode == 'enforce' else 'would_block'] += 1
-                        record('block' if mode == 'enforce' else 'would_block', owned)
-                        blocked[owned] = time.monotonic() + firewall.ttl
+                        if leases.confirm(owned, inode):
+                            record('block' if mode == 'enforce' else 'would_block', owned)
                     except (subprocess.SubprocessError, OSError):
                         counts['firewall_errors'] += 1
             except (OSError, asyncio.IncompleteReadError, ValueError):
