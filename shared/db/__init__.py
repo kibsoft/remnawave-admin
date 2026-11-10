@@ -17,9 +17,11 @@ from shared.db.finance_accounts import FinanceAccountsMixin
 from shared.db.config_versions import ConfigVersionsMixin
 from shared.db.user_presets import UserPresetsMixin
 from shared.db.bscheck import BscheckMixin
+from shared.db.flow_enforcement import FlowEnforcementMixin
 
 
 class DatabaseService(
+    FlowEnforcementMixin,
     UsersMixin,
     NodesMixin,
     ConnectionsMixin,

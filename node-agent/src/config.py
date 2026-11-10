@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     # Включение/выключение сбора торрент-событий
     torrent_detection_enabled: bool = True  # AGENT_TORRENT_DETECTION_ENABLED
 
+    # Optional read-only snapshot exported by a local exact-flow guard.
+    flow_enforcement_status_path: str = "/var/lib/rwa-flow-guard/status.json"
+
     # ── nDPI ──────────────────────────────────────────────────
     # Второй источник правды про торренты: демон nDPId раздаёт вердикты
     # JSON-строками через UNIX-сокет. Тег роутинга Xray ловит только

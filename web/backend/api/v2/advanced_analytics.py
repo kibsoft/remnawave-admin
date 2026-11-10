@@ -1500,3 +1500,17 @@ async def _export_ips(since: datetime, until: datetime, node_uuids: Optional[Lis
             item["connected_at"] = item["connected_at"].isoformat()
         items.append(item)
     return {"items": items, "total": len(items), "truncated": truncated}
+
+
+@router.get("/flow-enforcement")
+@limiter.limit(RATE_ANALYTICS)
+async def get_flow_enforcement(
+    request: Request,
+    admin: AdminUser = Depends(require_permission("analytics", "view")),
+):
+    """Actual firewall snapshots, separate from torrent detection statistics."""
+    try:
+        items = await _db().get_flow_enforcement_snapshots(await _node_scope(admin))
+        return {"nodes": items, "sampled_at": datetime.now(timezone.utc)}
+    except Exception as exc:
+        raise _failed("flow-enforcement", exc)

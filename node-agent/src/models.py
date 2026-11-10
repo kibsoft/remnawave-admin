@@ -93,6 +93,9 @@ class NetworkMetrics(BaseModel):
     tcp_listen_drop_ps: int = 0
 
 
+from .flow_enforcement_contract import FlowEnforcementReport
+
+
 class BatchReport(BaseModel):
     """Батч от одной ноды — тело POST /api/v2/collector/batch."""
 
@@ -102,5 +105,6 @@ class BatchReport(BaseModel):
     torrent_events: list[TorrentEvent] = Field(default_factory=list)
     system_metrics: Optional[SystemMetrics] = None
     network_metrics: Optional[NetworkMetrics] = None
+    flow_enforcement: Optional[FlowEnforcementReport] = None
     # Версия агента — панель сравнивает с эталоном и подсказывает обновление
     agent_version: Optional[str] = None

@@ -1,0 +1,33 @@
+services:
+  guard:
+    build: .
+    image: rwa-exact-flow-guard:1
+    container_name: rwa-flow-guard
+    network_mode: host
+    pid: container:remnanode
+    restart: unless-stopped
+    group_add: ["65534"]
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, SYS_PTRACE]
+    security_opt: [no-new-privileges:true, apparmor:rwa-flow-pilot]
+    read_only: true
+    tmpfs: [/tmp]
+    environment:
+      PILOT_MODE: dry-run
+      PILOT_TTL: '120'
+      PYTHONDONTWRITEBYTECODE: '1'
+    volumes:
+      - ./flow_guard.py:/pilot/flow_guard.py:ro
+      - ../ndpi-run:/run/ndpi:ro
+      - /opt/rwa-flow-guard/state:/state
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 5s
+    healthcheck:
+      test: [CMD, python, -c, "import json,time; s=json.load(open('/state/status.json')); assert s['connected'] and s.get('xray_owned_socket_count',0)>0 and time.time()-s['updated_at']<15"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '2'}

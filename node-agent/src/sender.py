@@ -84,6 +84,7 @@ class CollectorSender:
             return True
 
         from .version import AGENT_VERSION
+        from .collectors.flow_enforcement import collect_flow_enforcement
 
         report = BatchReport(
             node_uuid=self.settings.node_uuid,
@@ -93,6 +94,7 @@ class CollectorSender:
             system_metrics=system_metrics,
             network_metrics=network_metrics,
             agent_version=AGENT_VERSION,
+            flow_enforcement=collect_flow_enforcement(self.settings.flow_enforcement_status_path),
         )
         payload = report.model_dump(mode="json")
         body, headers = self._encode(payload)

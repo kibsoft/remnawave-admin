@@ -4,7 +4,7 @@ set -euo pipefail
 # Remnawave Node Agent — one-line installer
 # Usage:
 #   curl -fsSL --retry 3 --retry-delay 2 \
-#     https://raw.githubusercontent.com/Case211/remnawave-admin/main/node-agent/install.sh \
+#     https://raw.githubusercontent.com/kibsoft/remnawave-admin/main/node-agent/install.sh \
 #     -o /tmp/rwa-node-agent-install.sh \
 #   && bash /tmp/rwa-node-agent-install.sh --uuid UUID --url URL --token TOKEN
 #
@@ -12,7 +12,7 @@ set -euo pipefail
 # whatever GitHub returns, and a 429 rate-limit body becomes a command.
 
 INSTALL_DIR="/opt/remnawave-node-agent"
-COMPOSE_URL="https://raw.githubusercontent.com/Case211/remnawave-admin/main/node-agent/docker-compose.yml"
+COMPOSE_URL="https://raw.githubusercontent.com/kibsoft/remnawave-admin/main/node-agent/docker-compose.yml"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

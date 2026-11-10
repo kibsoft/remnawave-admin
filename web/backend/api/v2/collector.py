@@ -443,6 +443,9 @@ class TorrentEventReport(BaseModel):
     detected_by: str = "xray_routing"
 
 
+from shared.flow_enforcement import FlowEnforcementReport
+
+
 class BatchReport(BaseModel):
     """Батч подключений от одной ноды."""
     node_uuid: str
@@ -452,6 +455,7 @@ class BatchReport(BaseModel):
     system_metrics: Optional[SystemMetricsReport] = None
     network_metrics: Optional[NetworkMetricsReport] = None
     agent_version: Optional[str] = Field(default=None, max_length=32)
+    flow_enforcement: Optional[FlowEnforcementReport] = None
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -617,6 +621,10 @@ async def receive_connections(
             await db_service.update_node_agent_version(node_uuid, report.agent_version)
         except Exception as e:
             logger.debug("Failed to update agent version for node %s: %s", node_uuid, e)
+
+    if report.flow_enforcement is not None:
+        # The enclosing node UUID has already been checked against the agent token.
+        await db_service.save_flow_enforcement_snapshot(node_uuid, report.flow_enforcement.model_dump(mode="json"))
 
     # System metrics
     if report.system_metrics:

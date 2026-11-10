@@ -8889,5 +8889,33 @@
       "region": "Region",
       "showingOf": "Showing {{shown}} of {{total}}"
     }
+  },
+  "flowEnforcement": {
+  "title": "Actual flow blocking",
+  "hint": "Active bans and kernel packet drops per node. Refreshes every 15 seconds.",
+  "refresh": "Refresh",
+  "node": "Node",
+  "allNodes": "All nodes",
+  "showMissing": "Show nodes without reports",
+  "noData": "No guard reports yet. Torrent detections are shown separately below.",
+  "state": "State",
+  "active": "Active bans",
+  "applied": "Applied since start",
+  "dropped": "Dropped packets / bytes",
+  "rate": "Now",
+  "updated": "Node sample time",
+  "sinceGuard": "Guard started:",
+  "input": "Inbound",
+  "output": "Outbound",
+  "pps": "pkt/s",
+  "countersHint": "Active bans come from nftables. Packets and bytes are cumulative kernel counters since table creation and restart from zero if the table is reset. Applied bans are counted since guard process start. Stale data does not mean zero traffic.",
+  "states": {
+    "enforce": "Enforcing",
+    "dry-run": "Observe only",
+    "stale": "Stale data",
+    "disconnected": "nDPI disconnected",
+    "kernel_unavailable": "No kernel counters",
+    "not_reporting": "No reports"
   }
+}
 }

@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 AGENT_INSTALL_SCRIPT_URL = (
-    "https://raw.githubusercontent.com/Case211/remnawave-admin/main/node-agent/install.sh"
+    "https://raw.githubusercontent.com/kibsoft/remnawave-admin/main/node-agent/install.sh"
 )
 #: Куда installer кладётся на ноде перед запуском.
 AGENT_INSTALL_SCRIPT_PATH = "/tmp/rwa-node-agent-install.sh"

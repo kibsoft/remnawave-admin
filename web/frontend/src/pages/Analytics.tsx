@@ -71,6 +71,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import { QueryError } from '@/components/QueryError'
+import { FlowEnforcementCard } from '@/components/FlowEnforcementCard'
 import { cn } from '@/lib/utils'
 import { useChartTheme } from '@/lib/useChartTheme'
 import { parseApiDate, useFormatters } from '@/lib/useFormatters'
@@ -2880,6 +2881,7 @@ export default function Analytics() {
         </TabsContent>
 
         <TabsContent value="torrent">
+          <FlowEnforcementCard />
           <TorrentAnalyticsCard />
         </TabsContent>
 
